@@ -119,7 +119,7 @@ Import the helpers directly from `vexy_mkdocs_page_import`.
 
 ```python
 from pathlib import Path
-from vexy_mkdocs_page_import import cache_path, fetch_url, import_keys, read_cached
+from vexy_mkdocs_page_import import cache_path, import_keys, read_cached, refresh_cache
 
 cache_dir = Path("handbook/.cache/page-import")
 source = import_keys({"webflow-import-url": "https://example.org/guide"})
@@ -128,10 +128,11 @@ if source and source[0] in {"import-url", "webflow-import-url"}:
     path = cache_path(cache_dir, url)
     html = read_cached(cache_dir, url)
     if html is None:
-        html = fetch_url(url)
+        html = refresh_cache(url, cache_dir)
 ```
 
 - `fetch_url(url, *, timeout=30, retries=2, max_bytes=20971520) -> str` downloads and decodes HTML without reading or writing the cache. Set `retries=0` for a single attempt. Invalid arguments raise `ValueError`. A failed download raises `OSError`.
+- `refresh_cache(url, cache_dir: Path, *, timeout=30, retries=2, max_bytes=20971520) -> str` fetches with the same limits as `fetch_url`, atomically replaces the file at `cache_path(cache_dir, url)`, and returns the downloaded HTML. A failed download raises and leaves any existing entry intact.
 - `cache_path(cache_dir: Path, url: str) -> Path` returns the plugin’s cache filename without doing I/O. The naming scheme is stable: the lowercase hexadecimal SHA-256 of the exact URL's UTF-8 bytes, followed by `.html`. Query strings and fragments are part of the key.
 - `read_cached(cache_dir: Path, url: str) -> str | None` reads the UTF-8 source HTML. A missing, unreadable, invalid UTF-8, or blank entry returns `None`. Pass the cache directory itself to both helpers.
 - `import_keys(meta: Mapping[str, object]) -> tuple[str, str] | None` returns the single import key and its value, or `None` if absent. Multiple keys or a value other than a nonempty string raise `ValueError`.

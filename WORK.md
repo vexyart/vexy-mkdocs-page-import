@@ -4,6 +4,22 @@ this_file: WORK.md
 
 # Verification
 
+## Cache refresh and release checks — 2026-11-23
+
+On Python 3.13, MkDocs and ProperDocs each passed 139 tests, up from 135 at
+`79a0180`. Loopback tests verified atomic cache replacement, preservation of
+the previous entry on a failed refresh, and an offline build in a fresh process
+with `aiohttp` absent. On macOS a stalled download raised `KeyboardInterrupt`
+and the process exited within three seconds of SIGINT while the server still
+held the request. The interrupt test also passed on Python 3.12 and 3.14.
+The Windows console-signal path received static review only.
+
+Ruff passed lint and formatting (24 files), strict mypy passed (11 source files),
+and actionlint accepted the release workflow. The release test job runs both
+builders before the distribution build and publish jobs. The local wheel and
+sdist passed strict Twine checks. Importing the plugin from the wheel exposed
+`refresh_cache` and left `aiohttp` unloaded.
+
 ## 0.1.0 release readiness — 2026-11-23
 
 The baseline passed 109 tests. After the release fixes, all 135 tests passed on

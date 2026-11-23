@@ -2,24 +2,15 @@
 """Read remote HTML, caching the source before any page-specific edits."""
 
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
 from mkdocs.exceptions import PluginError
 from mkdocs.plugins import get_plugin_logger
 
-from .api import cache_path, fetch_url, read_cached
+from ._urls import checked_url, display_url
+from .api import _store, cache_path, fetch_url, read_cached
 from .config import PageImportConfig
-from .download import checked_url, display_url
 
 log = get_plugin_logger(__name__)
-
-
-def _store(path: Path, html: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(dir=path.parent) as temp:
-        staged = Path(temp) / path.name
-        staged.write_bytes(html.encode("utf-8"))
-        staged.replace(path)
 
 
 def fetch(url: str, config_dir: Path, options: PageImportConfig) -> str | None:

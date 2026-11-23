@@ -3,12 +3,14 @@
 
 import asyncio
 import os
+import signal
 import ssl
 import subprocess
 import sys
 import time
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from threading import Event
 
 import pytest
 from conftest import HTML, Origin, serve
@@ -21,6 +23,40 @@ def test_fetch_url_when_called_from_running_event_loop_then_downloads_html(origi
         return fetch_url(origin.url, retries=0, max_bytes=len(HTML.encode()))
 
     assert asyncio.run(caller()) == HTML
+
+
+def test_fetch_url_when_interrupted_then_exits_while_server_is_stalled() -> None:
+    requested = Event()
+    release = Event()
+
+    class Stalled(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            requested.set()
+            release.wait(timeout=30)
+
+    with serve(Stalled) as url:
+        with subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import signal, sys\nfrom vexy_mkdocs_page_import import fetch_url\n"
+                "if sys.platform == 'win32': "
+                "signal.signal(signal.SIGBREAK, signal.default_int_handler)\n"
+                "try: fetch_url(sys.argv[1])\nexcept KeyboardInterrupt: sys.exit(42)",
+                url,
+            ],
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
+        ) as child:
+            try:
+                assert requested.wait(timeout=10)
+                child.send_signal(
+                    signal.CTRL_BREAK_EVENT if sys.platform == "win32" else signal.SIGINT
+                )
+                assert child.wait(timeout=3) == 42
+            finally:
+                release.set()
+                if child.poll() is None:
+                    child.kill()
 
 
 @pytest.mark.parametrize(("body", "reason"), [(b"12345", "max_bytes"), (b"\xff", "decode")])

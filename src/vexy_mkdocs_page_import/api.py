@@ -1,19 +1,25 @@
 # this_file: src/vexy_mkdocs_page_import/api.py
-"""Inspect import metadata and the source HTML cache without starting a site build."""
+"""Fetch source HTML and work with its cache and metadata without starting a site build."""
 
 import hashlib
 from collections.abc import Mapping
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 _IMPORT_KEYS = ("import-url", "webflow-import-url", "copy-file")
+_DEFAULT_RETRIES = 2
 DEFAULT_MAX_BYTES = 20 * 1024 * 1024
 
 
 def fetch_url(
-    url: str, *, timeout: float = 30, retries: int = 2, max_bytes: int = DEFAULT_MAX_BYTES
+    url: str,
+    *,
+    timeout: float = 30,
+    retries: int = _DEFAULT_RETRIES,
+    max_bytes: int = DEFAULT_MAX_BYTES,
 ) -> str:
     """Download decoded HTML without caching. Retries count additional attempts."""
-    from .download import download  # noqa: PLC0415 -- keep cache helpers dependency-free
+    from ._download import download  # noqa: PLC0415 -- keep cache helpers dependency-free
 
     return download(url, timeout, retries, max_bytes)
 
@@ -22,6 +28,28 @@ def cache_path(cache_dir: Path, url: str) -> Path:
     """Return the cache file for the exact URL, without touching the filesystem."""
     key = hashlib.sha256(url.encode("utf-8")).hexdigest()
     return cache_dir / f"{key}.html"
+
+
+def _store(path: Path, html: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=path.parent) as temp:
+        staged = Path(temp) / path.name
+        staged.write_bytes(html.encode("utf-8"))
+        staged.replace(path)
+
+
+def refresh_cache(
+    url: str,
+    cache_dir: Path,
+    *,
+    timeout: float = 30,
+    retries: int = _DEFAULT_RETRIES,
+    max_bytes: int = DEFAULT_MAX_BYTES,
+) -> str:
+    """Fetch source HTML and atomically replace its cache entry after a successful download."""
+    html = fetch_url(url, timeout=timeout, retries=retries, max_bytes=max_bytes)
+    _store(cache_path(cache_dir, url), html)
+    return html
 
 
 def read_cached(cache_dir: Path, url: str) -> str | None:

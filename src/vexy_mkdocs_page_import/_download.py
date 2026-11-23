@@ -1,36 +1,23 @@
-# this_file: src/vexy_mkdocs_page_import/download.py
+# this_file: src/vexy_mkdocs_page_import/_download.py
 """Fetch a bounded HTTP response under one deadline across all redirect hops."""
 
 import asyncio
 import math
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing
+import sys
+from concurrent.futures import Future, ThreadPoolExecutor, wait
+from contextlib import closing, suppress
 from urllib.request import getproxies, proxy_bypass
 
 import aiohttp
 from yarl import URL
+
+from ._urls import checked_url, display_url
 
 MAX_REDIRECTS = 10
 
 
 class _ResponseError(ValueError):
     """A permanent failure with a message safe to display."""
-
-
-def checked_url(url: str) -> URL:
-    try:
-        if any(char <= " " or char == "\x7f" for char in url):
-            raise ValueError
-        parsed = URL(url, encoded=True)
-        if parsed.scheme in {"http", "https"} and parsed.host:
-            return parsed
-    except ValueError:
-        pass
-    raise ValueError("expected an HTTP or HTTPS URL")
-
-
-def display_url(url: URL) -> str:
-    return str(url.with_query(None).with_fragment(None).with_user(None))
 
 
 def _proxy(url: URL) -> str | None:
@@ -119,11 +106,31 @@ def download(url: str, timeout: float, retries: int, max_bytes: int) -> str:
     if type(max_bytes) is not int or max_bytes < 1:
         raise ValueError("max_bytes must be a positive integer")
 
+    interrupted: Future[None] = Future()
+
     def run() -> str:
         # Closing the loop leaves OS DNS resolution free to finish after a deadline.
         with closing(asyncio.new_event_loop()) as loop:
-            return loop.run_until_complete(_get(parsed, timeout, retries, max_bytes))
+            task = loop.create_task(_get(parsed, timeout, retries, max_bytes))
+
+            def cancel(_signal: Future[None]) -> None:
+                # A completed download may have closed the loop as Ctrl-C arrived.
+                with suppress(RuntimeError):
+                    loop.call_soon_threadsafe(task.cancel)
+
+            interrupted.add_done_callback(cancel)
+            return loop.run_until_complete(task)
 
     # A synchronous build tool may already be running an asyncio loop in its calling thread.
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        return executor.submit(run).result()
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        future = executor.submit(run)
+        # Older Windows Pythons dispatch keyboard signals only after a timed wait returns.
+        while sys.platform == "win32" and not future.done():
+            wait((future,), timeout=0.1)
+        return future.result()
+    except KeyboardInterrupt:
+        interrupted.cancel()
+        raise
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
