@@ -6,14 +6,15 @@ from pathlib import Path
 
 from mkdocs.config.defaults import MkDocsConfig
 from mkdocs.exceptions import PluginError
-from mkdocs.plugins import BasePlugin, event_priority
+from mkdocs.plugins import BasePlugin, event_priority, get_plugin_logger
 from mkdocs.structure.pages import Page
 
+from .api import import_keys
 from .config import PageImportConfig
 from .fetch import fetch
 from .webflow import insert_head, process_webflow
 
-IMPORT_KEYS = ("import-url", "webflow-import-url", "copy-file")
+log = get_plugin_logger(__name__)
 
 
 class PageImportPlugin(BasePlugin[PageImportConfig]):  # type: ignore[no-untyped-call]
@@ -24,22 +25,24 @@ class PageImportPlugin(BasePlugin[PageImportConfig]):  # type: ignore[no-untyped
 
     @event_priority(-100)
     def on_post_page(self, output: str, *, page: Page, config: MkDocsConfig) -> str:
-        keys = [key for key in IMPORT_KEYS if key in page.meta]
-        if not keys:
-            return output
         name = page.file.src_uri
-        if len(keys) > 1:
-            raise PluginError(f"{name}: specify only one import key; found {', '.join(keys)}")
-        key = keys[0]
-        source = page.meta[key]
-        if not isinstance(source, str) or not source.strip():
-            raise PluginError(f"{name}: {key} requires a non-empty string")
         try:
-            return self._import_page(key, source, Path(config.config_file_path).parent, name)
+            selection = import_keys(page.meta)
+        except ValueError as exc:
+            raise PluginError(f"{name}: {exc}") from exc
+        if selection is None:
+            return output
+        key, source = selection
+        try:
+            return self._import_page(
+                key, source, Path(config.config_file_path).parent, name, output
+            )
         except (OSError, ValueError, PluginError) as exc:
             raise PluginError(f"{name}: {key}: {exc}") from exc
 
-    def _import_page(self, key: str, source: str, config_dir: Path, page_name: str) -> str:
+    def _import_page(
+        self, key: str, source: str, config_dir: Path, page_name: str, output: str
+    ) -> str:
         if key == "copy-file":
             try:
                 root = (config_dir / self.config.copy_root).resolve()
@@ -50,7 +53,11 @@ class PageImportPlugin(BasePlugin[PageImportConfig]):  # type: ignore[no-untyped
                 raise PluginError(f"{path} must be inside copy_root {root}")
             html = path.read_bytes().decode("utf-8")
         else:
-            html = fetch(source, config_dir, self.config)
+            imported = fetch(source, config_dir, self.config)
+            if imported is None:
+                log.info("%s: offline cache miss for %s; keeping rendered page", page_name, source)
+                return output
+            html = imported
         if not html.strip():
             raise PluginError(f"empty HTML in {source}")
         if key == "webflow-import-url":

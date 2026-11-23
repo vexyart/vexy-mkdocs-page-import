@@ -72,10 +72,12 @@ or supply the assets at their referenced paths.
 
 | Option | Default | Behaviour |
 | --- | --- | --- |
+| `enabled` | `true` | Set to `false` to render the Markdown normally and skip all page imports, including cache access. |
 | `timeout` | `30` | Timeout in seconds for a network operation during a fetch. |
 | `copy_root` | `.` | Directory allowed for `copy-file` imports. Relative paths for both settings start at the site configuration directory. The file must be inside `copy_root` after resolving symlinks. |
 | `cache_dir` | `.cache/page-import` | Cache directory relative to the site configuration. Each URL has one entry keyed by the SHA-256 of the URL. |
-| `offline` | `false` | Read URL imports from cache only. A miss fails the build. |
+| `offline` | `false` | Read URL imports from cache only. |
+| `on_offline_miss` | `error` | With `offline: true`, `error` fails the build on a cache miss. `keep` logs the page name at INFO and keeps its rendered Markdown. |
 | `refresh` | `true` | Fetch again when online. Set to `false` to fetch only on a cache miss. |
 | `inject_head` | `""` | Insert HTML before the first closing head tag in any imported page. An existing copy is skipped. A missing closing tag produces a warning naming the page. |
 | `webflow.strip_badge` | `true` | Remove badge anchors and insert the hiding style. |
@@ -90,6 +92,27 @@ fetch fails, the plugin warns and uses a readable cached page, or fails the buil
 on a cache miss. A corrupt or unreadable entry counts as a miss. The cache holds
 the source HTML, so changes to Webflow options and head markup also take effect
 offline. Supply a nonempty HTML document for each import.
+
+## Python API
+
+Build tools can inspect front matter and cached HTML without starting MkDocs.
+Import the helpers directly from `vexy_mkdocs_page_import`.
+
+```python
+from pathlib import Path
+from vexy_mkdocs_page_import import cache_path, import_keys, read_cached
+
+cache_dir = Path("handbook/.cache/page-import")
+source = import_keys({"webflow-import-url": "https://example.org/guide"})
+if source and source[0] in {"import-url", "webflow-import-url"}:
+    url = source[1]
+    path = cache_path(cache_dir, url)
+    html = read_cached(cache_dir, url)
+```
+
+- `cache_path(cache_dir: Path, url: str) -> Path` returns the plugin’s cache filename for the exact URL. It does no I/O.
+- `read_cached(cache_dir: Path, url: str) -> str | None` reads the UTF-8 source HTML. A missing, unreadable, invalid UTF-8, or blank entry returns `None`. Pass the cache directory itself to both helpers.
+- `import_keys(meta: Mapping[str, object]) -> tuple[str, str] | None` returns the single import key and its value, or `None` if absent. Multiple keys or a value other than a nonempty string raise `ValueError`.
 
 ## Cloudinary delivery
 

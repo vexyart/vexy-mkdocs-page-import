@@ -23,6 +23,7 @@ class PageImportConfig(Config):  # type: ignore[no-untyped-call]
     cache_dir = c.Type(str, default=".cache/page-import")
     copy_root = c.Type(str, default=".")
     offline = c.Type(bool, default=False)
+    on_offline_miss = c.Choice(("error", "keep"), default="error")
     refresh = c.Type(bool, default=True)
     inject_head = c.Type(str, default="")
     webflow = c.SubConfig(WebflowConfig)

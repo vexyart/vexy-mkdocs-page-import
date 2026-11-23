@@ -1,7 +1,6 @@
 # this_file: src/vexy_mkdocs_page_import/fetch.py
 """Read remote HTML, caching the source before any page-specific edits."""
 
-import hashlib
 import time
 from http.client import HTTPException, HTTPMessage
 from pathlib import Path
@@ -14,6 +13,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from mkdocs.exceptions import PluginError
 from mkdocs.plugins import get_plugin_logger
 
+from .api import cache_path, read_cached
 from .config import PageImportConfig
 
 log = get_plugin_logger(__name__)
@@ -62,34 +62,25 @@ def _store(path: Path, html: str) -> None:
         staged.replace(path)
 
 
-def _read_cache(path: Path) -> str | None:
-    try:
-        if not path.is_file():
-            return None
-        html = path.read_bytes().decode("utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None
-    return html if html.strip() else None
-
-
-def fetch(url: str, config_dir: Path, options: PageImportConfig) -> str:
-    """Read one URL according to the offline, refresh and failure-fallback rules."""
+def fetch(url: str, config_dir: Path, options: PageImportConfig) -> str | None:
+    """Return source HTML, or None when an offline miss should keep the rendered page."""
     parts = urlsplit(url)
     if parts.scheme not in HTTP_SCHEMES or not parts.hostname:
         raise PluginError(f"expected an HTTP or HTTPS URL, got {url!r}")
-    key = hashlib.sha256(url.encode("utf-8")).hexdigest()
-    path = config_dir / options.cache_dir / f"{key}.html"
+    cache_dir = config_dir / options.cache_dir
     if options.offline or not options.refresh:
-        if (cached := _read_cache(path)) is not None:
+        if (cached := read_cached(cache_dir, url)) is not None:
             return cached
         if options.offline:
+            if options.on_offline_miss == "keep":
+                return None
             raise PluginError(f"offline cache miss for {url}")
     try:
         html = _download(url, options.timeout)
     except PluginError as exc:
-        if (cached := _read_cache(path)) is None:
+        if (cached := read_cached(cache_dir, url)) is None:
             raise
         log.warning("%s; using cached copy", exc)
         return cached
-    _store(path, html)
+    _store(cache_path(cache_dir, url), html)
     return html

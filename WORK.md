@@ -4,6 +4,14 @@ this_file: WORK.md
 
 # Verification
 
+## Build controls and Python API
+
+Both MkDocs 1.6.1 and ProperDocs 1.6.7 passed 109 tests. Disabled builds and
+offline misses with `keep` produced the same HTML as an ordinary Markdown build.
+Ruff lint and formatting passed, and strict mypy checked nine source files.
+The wheel’s three public helpers also passed a cache round trip in an isolated
+Python interpreter with site packages disabled.
+
 ## Responsive Cloudinary delivery
 
 The full suite passed on MkDocs 1.6.1 and ProperDocs 1.6.7 (93 tests each).
