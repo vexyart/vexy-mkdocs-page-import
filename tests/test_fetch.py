@@ -1,6 +1,9 @@
 # this_file: tests/test_fetch.py
 """Check fetch decisions against the origin request count and cache contents."""
 
+import logging
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -80,3 +83,57 @@ def test_fetch_when_cache_unusable_then_misses_offline_and_refetches_online(
         assert build_page(tmp_path, meta, refresh=False) == origin.html
     assert len(origin.agents) == 3
     assert cache.read_text(encoding="utf-8") == origin.html
+
+
+def test_fetch_when_404_serves_cache_then_strict_cli_succeeds(
+    tmp_path: Path, origin: Origin
+) -> None:
+    url = origin.url + "?token=hidden-query#hidden-fragment"
+    build_page(tmp_path, {"import-url": url})
+    origin.error_code = 404
+    origin.failures = 1
+    build = subprocess.run(
+        [sys.executable, "-m", "mkdocs", "build", "--strict"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    assert "404" in build.stderr and "serving cached copy" in build.stderr
+    assert "hidden-query" not in build.stderr and "hidden-fragment" not in build.stderr
+    assert (tmp_path / "site/imported/index.html").read_text(encoding="utf-8") == HTML
+    assert len(origin.agents) == 2
+
+
+@pytest.mark.parametrize("mode", ["miss", "offline", "keep"])
+def test_fetch_when_cache_missing_then_redacts_urls_in_logs_and_errors(
+    tmp_path: Path, origin: Origin, caplog: pytest.LogCaptureFixture, mode: str
+) -> None:
+    url = origin.url + "?token=hidden-query#hidden-fragment"
+    origin.error_code = 404
+    origin.failures = 1
+    meta = {"import-url": url}
+    with caplog.at_level(logging.INFO):
+        if mode == "keep":
+            build_page(tmp_path, meta, offline=True, on_offline_miss="keep")
+        else:
+            with pytest.raises(PluginError) as exc:
+                build_page(tmp_path, meta, offline=mode == "offline")
+            assert "hidden-" not in str(exc.value)
+    assert "hidden-" not in caplog.text
+    if mode == "miss":
+        assert any(
+            record.levelno == logging.WARNING and "no cached copy" in record.getMessage()
+            for record in caplog.records
+        )
+
+
+def test_fetch_when_body_exceeds_plugin_cap_then_preserves_cache(
+    tmp_path: Path, origin: Origin
+) -> None:
+    meta = {"import-url": origin.url}
+    assert build_page(tmp_path, meta, max_bytes=len(HTML.encode())) == HTML
+    origin.html += "!"
+    assert build_page(tmp_path, meta, max_bytes=len(HTML.encode())) == HTML
+    assert len(origin.agents) == 2

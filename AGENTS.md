@@ -11,11 +11,12 @@ options can be changed on an offline build.
 `tests/test_build.py` uses an actual site builder and a loopback HTTP server.
 `tests/test_webflow.py` covers transformations on individual HTML documents.
 
-Run from the project root on Python 3.13.
+Run from the project root on Python 3.13. The loopback HTTPS test uses the
+`openssl` CLI to generate a temporary certificate.
 
 ```sh
 uv venv --python 3.13
-uv pip install -e ".[dev]" "mkdocs==1.6.1" "properdocs==1.6.7"
+uv sync --locked --all-extras
 uv run pytest -q
 uv run python -c 'import properdocs.replacement; import pytest; raise SystemExit(pytest.main(["-q"]))'
 uv run ruff check .

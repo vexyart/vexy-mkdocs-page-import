@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+
+<html><head><title>É</title><link href="https://fonts.googleapis.com/css2?family=Alegreya&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Outfit&amp;display=swap" rel="stylesheet"/><style>.w-webflow-badge{display:none !important;}</style></head><body><img loading="lazy" src="https://res.cloudinary.com/fontlab/image/upload/f_svg/vw/logo.SVG?x=1#icon"/><img class="cld-responsive" data-src="https://res.cloudinary.com/fontlab/image/upload/c_limit,w_auto/f_auto,q_auto,dpr_auto/e_grayscale/vw/raster.jpg" loading="lazy" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/><div style="background:url(https://res.cloudinary.com/fontlab/image/upload/f_svg/vw/vector.svg)"></div><script data-cfasync="false" type="text/javascript">
+(function() {
+  function initResponsive() {
+    const observer = new ResizeObserver(entries => {
+      for (let entry of entries) {
+        const img = entry.target;
+        const width = img.clientWidth || (img.parentElement ? img.parentElement.clientWidth : 0);
+        if (width > 0) {
+          const dpr = window.devicePixelRatio || 1;
+          const targetWidth = Math.ceil((width * dpr) / 100) * 100;
+          const dataSrc = img.getAttribute('data-src');
+          if (dataSrc) {
+            const newSrc = dataSrc.replace('w_auto', 'w_' + targetWidth);
+            if (img.getAttribute('src') !== newSrc) {
+              img.style.transition = 'filter 0.4s ease-in-out';
+              img.style.filter = 'blur(4px)';
+              const handleLoad = () => {
+                img.style.filter = 'none';
+                img.removeEventListener('load', handleLoad);
+              };
+              img.addEventListener('load', handleLoad);
+              img.setAttribute('src', newSrc);
+              if (img.complete) {
+                handleLoad();
+              }
+            }
+          }
+        }
+      }
+    });
+    document.querySelectorAll('img.cld-responsive').forEach(img => {
+      observer.observe(img);
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initResponsive);
+  } else {
+    initResponsive();
+  }
+})();
+</script></body></html>

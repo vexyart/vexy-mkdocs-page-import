@@ -2,7 +2,9 @@
 """Build sites from real config files and serve controlled HTTP responses on loopback."""
 
 import json
+import ssl
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -16,14 +18,36 @@ from mkdocs.exceptions import Abort, PluginError
 HTML = '<html><head></head><body><script src="app.js"></script>Imported café</body></html>'
 
 
+@pytest.fixture(autouse=True)
+def bypass_proxy_for_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("no_proxy", "127.0.0.1,localhost")
+
+
 @dataclass
 class Origin:
     url: str = ""
     html: str = HTML
+    body: bytes | None = None
     failures: int = 0
     error_code: int = 503
     redirect: str = ""
     agents: list[str] = field(default_factory=list)
+
+
+@contextmanager
+def serve(
+    handler: type[BaseHTTPRequestHandler], tls: ssl.SSLContext | None = None
+) -> Iterator[str]:
+    with HTTPServer(("127.0.0.1", 0), handler) as http:
+        if tls is not None:
+            http.socket = tls.wrap_socket(http.socket, server_side=True)
+        thread = Thread(target=http.serve_forever, kwargs={"poll_interval": 0.01})
+        thread.start()
+        try:
+            yield f"{'https' if tls else 'http'}://127.0.0.1:{http.server_port}"
+        finally:
+            http.shutdown()
+            thread.join()
 
 
 @pytest.fixture
@@ -37,7 +61,7 @@ def origin() -> Iterator[Origin]:
                 state.failures -= 1
                 self.send_error(state.error_code)
                 return
-            if state.redirect and self.path == "/page":
+            if state.redirect and self.path.partition("?")[0] == "/page":
                 self.send_response(302)
                 self.send_header("Location", state.redirect)
                 self.end_headers()
@@ -45,20 +69,14 @@ def origin() -> Iterator[Origin]:
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(state.html.encode())
+            self.wfile.write(state.html.encode() if state.body is None else state.body)
 
         def log_message(self, *_args: object) -> None:
             pass  # Expected 503s should stay out of the test output.
 
-    with HTTPServer(("127.0.0.1", 0), Request) as http:
-        state.url = f"http://127.0.0.1:{http.server_port}/page"
-        thread = Thread(target=http.serve_forever, kwargs={"poll_interval": 0.01})
-        thread.start()
-        try:
-            yield state
-        finally:
-            http.shutdown()
-            thread.join()
+    with serve(Request) as base:
+        state.url = f"{base}/page"
+        yield state
 
 
 def build_page(root: Path, meta: dict[str, object], **options: object) -> str:

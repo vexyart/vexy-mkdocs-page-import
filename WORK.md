@@ -4,6 +4,32 @@ this_file: WORK.md
 
 # Verification
 
+## 0.1.0 release readiness — 2026-11-23
+
+The baseline passed 109 tests. After the release fixes, all 135 tests passed on
+each combination of Python 3.12.12, 3.13.18 and 3.14.10 with MkDocs 1.6.1 and
+ProperDocs 1.6.7. The suite includes a real HTTPS downgrade, slow headers,
+slow bodies, a cumulative redirect deadline, and a strict CLI build serving a
+cached page after a 404. OpenSSL generates a temporary loopback certificate.
+
+Ruff lint and formatting passed (23 Python files), strict mypy passed (10 source
+files), and actionlint accepted both workflows. The locked dev environment
+resolved 42 packages. The ordinary untagged build and a separate build with
+`SETUPTOOLS_SCM_PRETEND_VERSION=0.1.0` each produced a wheel and sdist that
+passed `twine check --strict`. Both wheels contained the type marker and generated
+version module. Both sdists contained all 12 golden HTML files. A fresh install
+of the 0.1.0 preview loaded the plugin entry point and four public helpers, and
+`mkdocs build --strict` preserved the local import's UTF-8 and CRLF bytes.
+
+The golden files came from the toolkit's `origin/main` commit
+`2b054e66579f7d4899f949a19ecc3031e77f2641` (reference source SHA-256 below).
+They capture six inputs before and after whole-page processing. The two expected
+differences in the comparisons are the inline config ID and JSON string quoting.
+
+Both consumer configurations already nest the three Cloudinary keys. A
+read-only scan found zero occurrences of the old config ID in 26 cached and
+five static FontLab files, and 20 cached and one static Vexy file.
+
 ## Build controls and Python API
 
 Both MkDocs 1.6.1 and ProperDocs 1.6.7 passed 109 tests. Disabled builds and

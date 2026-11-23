@@ -1,57 +1,17 @@
 # this_file: src/vexy_mkdocs_page_import/fetch.py
 """Read remote HTML, caching the source before any page-specific edits."""
 
-import time
-from http.client import HTTPException, HTTPMessage
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import IO, override
-from urllib.error import HTTPError
-from urllib.parse import urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from mkdocs.exceptions import PluginError
 from mkdocs.plugins import get_plugin_logger
 
-from .api import cache_path, read_cached
+from .api import cache_path, fetch_url, read_cached
 from .config import PageImportConfig
+from .download import checked_url, display_url
 
 log = get_plugin_logger(__name__)
-ATTEMPTS = 3
-HTTP_SCHEMES = {"http", "https"}
-
-
-class _HTTPRedirects(HTTPRedirectHandler):
-    @override
-    def redirect_request(
-        self, req: Request, fp: IO[bytes], code: int, msg: str, headers: HTTPMessage, newurl: str
-    ) -> Request | None:
-        if urlsplit(newurl).scheme not in HTTP_SCHEMES:
-            raise HTTPError(newurl, code, f"Refused redirect to {newurl}", headers, fp)
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-
-def _download(url: str, timeout: float) -> str:
-    request = Request(url, headers={"User-Agent": "vexy-mkdocs-page-import"})
-    opener = build_opener(_HTTPRedirects)
-    attempt = 1
-    while True:
-        try:
-            with opener.open(request, timeout=timeout) as response:
-                charset = response.headers.get_content_charset() or "utf-8"
-                html: str = response.read().decode(charset)
-            if not html.strip():
-                raise ValueError("empty HTML")
-            return html
-        except (OSError, HTTPException, ValueError, LookupError) as exc:
-            if isinstance(exc, HTTPError):
-                exc.close()
-                if 400 <= exc.code < 500 or urlsplit(exc.url).scheme not in HTTP_SCHEMES:
-                    raise PluginError(f"failed to fetch {url}: {exc}") from exc
-            if attempt == ATTEMPTS:
-                raise PluginError(f"failed to fetch {url} after {attempt} attempts: {exc}") from exc
-            time.sleep(0.1 * attempt)
-            attempt += 1
 
 
 def _store(path: Path, html: str) -> None:
@@ -64,9 +24,7 @@ def _store(path: Path, html: str) -> None:
 
 def fetch(url: str, config_dir: Path, options: PageImportConfig) -> str | None:
     """Return source HTML, or None when an offline miss should keep the rendered page."""
-    parts = urlsplit(url)
-    if parts.scheme not in HTTP_SCHEMES or not parts.hostname:
-        raise PluginError(f"expected an HTTP or HTTPS URL, got {url!r}")
+    label = display_url(checked_url(url))
     cache_dir = config_dir / options.cache_dir
     if options.offline or not options.refresh:
         if (cached := read_cached(cache_dir, url)) is not None:
@@ -74,13 +32,14 @@ def fetch(url: str, config_dir: Path, options: PageImportConfig) -> str | None:
         if options.offline:
             if options.on_offline_miss == "keep":
                 return None
-            raise PluginError(f"offline cache miss for {url}")
+            raise PluginError(f"offline cache miss for {label}")
     try:
-        html = _download(url, options.timeout)
-    except PluginError as exc:
+        html = fetch_url(url, timeout=options.timeout, max_bytes=options.max_bytes)
+    except OSError as exc:
         if (cached := read_cached(cache_dir, url)) is None:
-            raise
-        log.warning("%s; using cached copy", exc)
+            log.warning("%s; no cached copy available", exc)
+            raise PluginError(str(exc)) from exc
+        log.info("%s; serving cached copy", exc)
         return cached
     _store(cache_path(cache_dir, url), html)
     return html

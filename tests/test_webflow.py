@@ -49,7 +49,9 @@ def test_process_webflow_when_cloudinary_prefix_is_mapped_then_rewrites_each_med
     html = (
         f'<img src="{src}"><video poster="{src}"></video><style>i{{background:url({src})}}</style>'
     )
-    out = process(html, cl_map={prefix: "base"}, cl_trans="", cl_cloud="testcloud")
+    out = process(
+        html, cloudinary={"cl_map": {prefix: "base"}, "cl_trans": "", "cl_cloud": "testcloud"}
+    )
     assert out.count(UPLOAD + "base/portrait.jpg") == 3
 
 
@@ -64,9 +66,11 @@ def process(html: str, **settings: object) -> str:
 def map_media(html: str) -> str:
     return process(
         html,
-        cl_map={CDN: "vw", "https://i.vexy.art": "v"},
-        cl_cloud="testcloud",
-        cl_trans=TRANS,
+        cloudinary={
+            "cl_map": {CDN: "vw", "https://i.vexy.art": "v"},
+            "cl_cloud": "testcloud",
+            "cl_trans": TRANS,
+        },
         strip_badge=False,
     )
 
@@ -84,9 +88,20 @@ def test_process_webflow_when_badges_present_then_removes_anchors_and_hides_once
 
 
 @pytest.mark.parametrize("css", [".w-webflow-badge{opacity:0}", "<style>x{}</style>"])
-def test_process_webflow_when_head_missing_then_prepends_custom_style(css: str) -> None:
+def test_process_webflow_when_head_missing_then_creates_head_for_custom_style(css: str) -> None:
     expected = css if css.startswith("<style>") else f"<style>{css}</style>"
-    assert process("<div>x</div>", badge_hide_css=css) == expected + "<div>x</div>"
+    assert process("<div>x</div>", badge_hide_css=css) == f"<head>{expected}</head><div>x</div>"
+
+
+@pytest.mark.parametrize("document", ["<html><body>x</body></html>", "<body>x</body>"])
+def test_process_webflow_when_head_missing_then_keeps_doctype_first(document: str) -> None:
+    output = process("<!doctype html>" + document)
+    assert output.startswith("<!DOCTYPE html>")
+    soup = BeautifulSoup(output, "html.parser")
+    assert str(soup.select_one("head > style")) == HIDE
+    assert soup.head.find_next_sibling().name == "body"
+    if soup.html:
+        assert soup.head.parent is soup.html
 
 
 def test_process_webflow_when_badge_removal_disabled_then_keeps_anchor() -> None:
@@ -111,7 +126,7 @@ def test_build_when_missing_head_end_then_warns_with_page_and_skips_snippet(
             assert output.startswith("<!DOCTYPE html>")
             assert str(BeautifulSoup(output, "html.parser").select_one("head > style")) == HIDE
         else:
-            assert output.startswith(HIDE)
+            assert output.startswith(f"<head>{HIDE}</head>")
         assert any("imported.md" in w and "badge" in w and "</head>" in w for w in warnings)
 
 

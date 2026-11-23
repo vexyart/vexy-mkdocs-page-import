@@ -6,7 +6,7 @@ import re
 from html.parser import HTMLParser
 from typing import Any
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Doctype
 from mkdocs.plugins import get_plugin_logger
 
 from .cloudinary import apply_cloudinary
@@ -59,14 +59,9 @@ def insert_head(html: str, snippet: str, *, page_name: str = "Imported HTML") ->
 
 
 def _cloudinary_config(soup: BeautifulSoup, options: WebflowConfig) -> dict[str, Any]:
-    """Merge legacy aliases, site settings, and this export's Cloudinary overrides."""
-    config = {
-        "cl_map": options.cl_map,
-        "cl_trans": options.cl_trans,
-        "cl_cloud": options.cl_cloud,
-        **options.cloudinary,
-    }
-    script = soup.find("script", id="fontlab-toolkit-config", type="application/json")
+    """Merge site settings with this export's Cloudinary overrides."""
+    config = options.cloudinary.copy()
+    script = soup.find("script", id="page-import-config", type="application/json")
     if script and script.string:
         try:
             page = json.loads(script.string)
@@ -110,10 +105,16 @@ def _hide_badge(
     fragment = BeautifulSoup(style, "html.parser")
     if not has_head_end:
         log.warning("%s: no closing </head> tag for the badge style", page_name)
-    if soup.head is None:
-        soup.insert(0, fragment)
-    else:
-        soup.head.append(fragment)
+    head = soup.head
+    if head is None:
+        head = soup.new_tag("head")
+        parent = soup.html or soup
+        doctype = next((node for node in parent.contents if isinstance(node, Doctype)), None)
+        if doctype is None:
+            parent.insert(0, head)
+        else:
+            doctype.insert_after(head)
+    head.append(fragment)
     return True
 
 

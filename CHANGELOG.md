@@ -4,11 +4,9 @@ this_file: CHANGELOG.md
 
 # Changelog
 
-## Unreleased
+## 0.1.0 — 2026-11-23
 
-- Added `on_offline_miss: keep` to retain the rendered Markdown when a URL has no usable cached HTML. The default remains `error`.
-- Documented and tested `enabled: false` for builds that skip all imports. Exported `cache_path`, `read_cached`, and `import_keys` for Python build tools.
-- Added page replacement from a URL, a Webflow export, or a local HTML file.
-- Added a disk cache for offline builds, retry and fallback on fetch errors, and optional head HTML.
-- Added Webflow badge removal, Google Fonts link splitting, Cloudinary media rewriting, and Rocket Loader opt-out.
-- Added the toolkit’s complete Cloudinary configuration under `webflow.cloudinary`, including modern and legacy responsive scripts, thumbnail and accessibility transformations, lazy loading, placeholders, and per-page Cloudinary overrides. Existing flat Cloudinary settings remain supported.
+- Publish whole HTML documents from URLs, Webflow exports, or files under `copy_root`, with optional head markup.
+- Cache source HTML for offline builds and strict-build fallback. Bound online fetches by time and size, redact URL queries and fragments in diagnostics, and refuse HTTPS downgrades.
+- Clean up Webflow badges and fonts, opt scripts out of Rocket Loader, and configure responsive media under `webflow.cloudinary` or in a page's `page-import-config` JSON.
+- Export typed `fetch_url`, `cache_path`, `read_cached`, and `import_keys` helpers.

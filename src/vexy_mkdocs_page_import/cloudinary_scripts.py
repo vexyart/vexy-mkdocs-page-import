@@ -1,12 +1,14 @@
 # this_file: src/vexy_mkdocs_page_import/cloudinary_scripts.py
 """Emit the toolkit's responsive image scripts with their original whitespace."""
 
+import json
 from string import Template
 from typing import Any
 
 from bs4 import BeautifulSoup
 
-_CORE_JS = "https://unpkg.com/cloudinary-core@latest"
+_CORE_JS = "https://unpkg.com/cloudinary-core@2.14.1/cloudinary-core.js"
+_CORE_SRI = "sha384-yP73KpugzJHZ1Fek8lpAVOTPfOT5iU/ov7zdYEyi7+U2KT9rvIqZKcWz/a2veMTe"
 _INTERSECTION = """\
     const intersectionObserver = new IntersectionObserver((entries, observer) => {
       for (let entry of entries) {
@@ -75,10 +77,15 @@ def append_responsive_script(
     script = soup.new_tag("script", type="text/javascript")
     if methodology == "legacy":
         core = cl_responsive.get("cl_core_js", _CORE_JS)
-        body.append(soup.new_tag("script", src=core, type="text/javascript"))
+        library = soup.new_tag("script", src=core, type="text/javascript")
+        if core == _CORE_JS:
+            library["integrity"] = _CORE_SRI
+            library["crossorigin"] = "anonymous"
+        body.append(library)
+        # Raw HTML script text must also escape the opening < of a closing script tag.
+        name = json.dumps(cl_cloud).replace("<", "\\u003c")
         script.string = (
-            f"\nvar cl = cloudinary.Cloudinary.new({{cloud_name: '{cl_cloud}'}});\n"
-            "cl.responsive();\n"
+            f"\nvar cl = cloudinary.Cloudinary.new({{cloud_name: {name}}});\ncl.responsive();\n"
         )
     elif custom := cl_responsive.get("cl_custom_js"):
         if custom.strip().startswith("<script"):

@@ -10,6 +10,7 @@ from mkdocs.plugins import BasePlugin, event_priority, get_plugin_logger
 from mkdocs.structure.pages import Page
 
 from .api import import_keys
+from .cloudinary import cloud_name
 from .config import PageImportConfig
 from .fetch import fetch
 from .webflow import insert_head, process_webflow
@@ -22,6 +23,10 @@ class PageImportPlugin(BasePlugin[PageImportConfig]):  # type: ignore[no-untyped
         timeout = self.config.timeout
         if isinstance(timeout, bool) or not math.isfinite(timeout) or timeout <= 0:
             raise PluginError("page-import: timeout must be a positive, finite number of seconds")
+        if isinstance(self.config.max_bytes, bool) or self.config.max_bytes <= 0:
+            raise PluginError("page-import: max_bytes must be a positive integer")
+        if self.config.webflow.cloudinary.get("cl_map"):
+            cloud_name(self.config.webflow.cloudinary)
 
     @event_priority(-100)
     def on_post_page(self, output: str, *, page: Page, config: MkDocsConfig) -> str:
@@ -34,9 +39,8 @@ class PageImportPlugin(BasePlugin[PageImportConfig]):  # type: ignore[no-untyped
             return output
         key, source = selection
         try:
-            return self._import_page(
-                key, source, Path(config.config_file_path).parent, name, output
-            )
+            config_dir = Path(config.config_file_path or config.docs_dir).parent
+            return self._import_page(key, source, config_dir, name, output)
         except (OSError, ValueError, PluginError) as exc:
             raise PluginError(f"{name}: {key}: {exc}") from exc
 
@@ -44,6 +48,8 @@ class PageImportPlugin(BasePlugin[PageImportConfig]):  # type: ignore[no-untyped
         self, key: str, source: str, config_dir: Path, page_name: str, output: str
     ) -> str:
         if key == "copy-file":
+            if Path(source).is_absolute():
+                raise PluginError("copy-file requires a relative path inside copy_root")
             try:
                 root = (config_dir / self.config.copy_root).resolve()
                 path = (config_dir / source).resolve()
@@ -52,14 +58,14 @@ class PageImportPlugin(BasePlugin[PageImportConfig]):  # type: ignore[no-untyped
             if root not in path.parents:
                 raise PluginError(f"{path} must be inside copy_root {root}")
             html = path.read_bytes().decode("utf-8")
+            if not html.strip():
+                raise PluginError(f"empty HTML in {source}")
         else:
             imported = fetch(source, config_dir, self.config)
             if imported is None:
-                log.info("%s: offline cache miss for %s; keeping rendered page", page_name, source)
+                log.info("%s: offline cache miss; keeping rendered page", page_name)
                 return output
             html = imported
-        if not html.strip():
-            raise PluginError(f"empty HTML in {source}")
         if key == "webflow-import-url":
             return process_webflow(
                 html, self.config.webflow, self.config.inject_head, page_name=page_name

@@ -6,6 +6,16 @@ from collections.abc import Mapping
 from pathlib import Path
 
 _IMPORT_KEYS = ("import-url", "webflow-import-url", "copy-file")
+DEFAULT_MAX_BYTES = 20 * 1024 * 1024
+
+
+def fetch_url(
+    url: str, *, timeout: float = 30, retries: int = 2, max_bytes: int = DEFAULT_MAX_BYTES
+) -> str:
+    """Download decoded HTML without caching. Retries count additional attempts."""
+    from .download import download  # noqa: PLC0415 -- keep cache helpers dependency-free
+
+    return download(url, timeout, retries, max_bytes)
 
 
 def cache_path(cache_dir: Path, url: str) -> Path:

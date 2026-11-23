@@ -12,14 +12,18 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 authors = [{ name = "Vexy Lines Team", email = "help@vexy.art" }]
-keywords = ["mkdocs", "properdocs", "plugin", "html", "webflow"]
+keywords = ["mkdocs", "properdocs", "plugin", "html", "webflow", "page-import", "cloudinary"]
 classifiers = [
+    "Development Status :: 4 - Beta",
     "Framework :: MkDocs",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Documentation",
+    "Typing :: Typed",
 ]
-dependencies = ["mkdocs>=1.6", "beautifulsoup4>=4.13"]
+dependencies = ["mkdocs>=1.6", "beautifulsoup4>=4.13", "aiohttp>=3.12", "yarl>=1.17"]
 
 [project.optional-dependencies]
 dev = [
@@ -27,7 +31,7 @@ dev = [
     "pytest-cov",
     "ruff",
     "mypy",
-    "markdownify>=1.2.2",
+    "properdocs==1.6.7",
 ]
 
 [project.urls]

@@ -4,12 +4,15 @@
 import hashlib
 import json
 import logging
+from io import BytesIO
 from itertools import combinations
 from pathlib import Path
 
 import pytest
 from bs4 import BeautifulSoup
 from conftest import HTML, Origin, build_page
+from mkdocs.commands.build import build
+from mkdocs.config import load_config
 from mkdocs.exceptions import PluginError
 
 
@@ -53,7 +56,29 @@ def test_build_when_copy_file_missing_then_plugin_error_names_file(tmp_path: Pat
         build_page(tmp_path, {"copy-file": "missing.html"})
 
 
-@pytest.mark.parametrize("source", ["absolute", "../export.html", "linked.html"])
+def test_build_when_config_has_no_file_then_resolves_copy_from_docs_parent(tmp_path: Path) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "index.md").write_text("---\ncopy-file: export.html\n---\n# Guide\n", encoding="utf-8")
+    (tmp_path / "export.html").write_text(HTML, encoding="utf-8")
+    site = tmp_path / "site"
+    theme = tmp_path / "theme"
+    theme.mkdir()
+    (theme / "main.html").write_text("{{ page.content }}", encoding="utf-8")
+    config = load_config(
+        config_file=BytesIO(b"site_name: Test\nplugins: [page-import]\n"),
+        theme={"name": None, "custom_dir": str(theme)},
+        docs_dir=str(docs),
+        site_dir=str(site),
+    )
+    assert not config.config_file_path
+    build(config)
+    assert (site / "index.html").read_bytes() == HTML.encode()
+
+
+@pytest.mark.parametrize(
+    "source", ["absolute", "../export.html", "linked.html", "link/export.html"]
+)
 def test_build_when_copy_file_outside_root_then_plugin_error_names_page(
     tmp_path: Path, source: str
 ) -> None:
@@ -62,8 +87,16 @@ def test_build_when_copy_file_outside_root_then_plugin_error_names_page(
     export = tmp_path / "export.html"
     export.write_text(HTML, encoding="utf-8")
     (project / "linked.html").symlink_to(export)
+    (project / "link").symlink_to(tmp_path, target_is_directory=True)
     with pytest.raises(PluginError, match=r"imported\.md.*copy_root"):
         build_page(project, {"copy-file": str(export) if source == "absolute" else source})
+
+
+def test_build_when_copy_file_is_absolute_even_inside_root_then_rejects_it(tmp_path: Path) -> None:
+    export = tmp_path / "export.html"
+    export.write_text(HTML, encoding="utf-8")
+    with pytest.raises(PluginError, match="relative"):
+        build_page(tmp_path, {"copy-file": str(export)})
 
 
 @pytest.mark.parametrize("absolute_root", [False, True])
@@ -94,6 +127,15 @@ def test_build_when_timeout_invalid_then_plugin_error_before_fetch(
 ) -> None:
     with pytest.raises(PluginError, match="timeout"):
         build_page(tmp_path, {"import-url": origin.url}, timeout=timeout)
+    assert not origin.agents
+
+
+@pytest.mark.parametrize("max_bytes", [0, -1, True])
+def test_build_when_max_bytes_invalid_then_plugin_error_before_fetch(
+    tmp_path: Path, origin: Origin, max_bytes: int
+) -> None:
+    with pytest.raises(PluginError, match="max_bytes"):
+        build_page(tmp_path, {"import-url": origin.url}, max_bytes=max_bytes)
     assert not origin.agents
 
 
@@ -143,18 +185,18 @@ def test_build_when_origin_fails_then_retries_up_to_three_times(
     assert len(origin.agents) == 3
 
 
-def test_build_when_refresh_fails_then_warns_and_uses_cache(
+def test_build_when_refresh_fails_then_logs_at_info_and_uses_cache(
     tmp_path: Path, origin: Origin, caplog: pytest.LogCaptureFixture
 ) -> None:
     meta = {"import-url": origin.url}
     build_page(tmp_path, meta)
     origin.failures = 3
     caplog.clear()
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         assert build_page(tmp_path, meta) == HTML
     assert len(origin.agents) == 4
     assert any(
-        r.levelno == logging.WARNING and "cache" in r.getMessage().lower() for r in caplog.records
+        r.levelno == logging.INFO and "cache" in r.getMessage().lower() for r in caplog.records
     )
 
 

@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from bs4 import BeautifulSoup, Tag
+from mkdocs.exceptions import PluginError
 
 from .cloudinary_scripts import append_responsive_script
 
@@ -43,11 +44,19 @@ def _lazyload(value: object, methodology: str) -> str:
     return value.lower() if isinstance(value, str) else "false"
 
 
+def cloud_name(config: dict[str, Any]) -> str:
+    """Require an explicit destination cloud when URL mapping is enabled."""
+    name = config.get("cl_cloud")
+    if not isinstance(name, str) or not name.strip():
+        raise PluginError("webflow.cloudinary.cl_cloud is required when cl_map is non-empty")
+    return name
+
+
 class _Delivery:
     """Resolve transforms once for all images, attributes and CSS on a page."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.cloud: str = config.get("cl_cloud", "fontlab")
+        self.cloud = cloud_name(config)
         self.mapping: dict[str, str] = config.get("cl_map", {})
         self.svg: str = config.get("cl_trans_svg", "f_svg,q_auto")
         self.static: str = config.get("cl_trans_static", "f_auto,q_auto")
